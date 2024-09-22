@@ -8,6 +8,9 @@ class WaveformPainter extends CustomPainter {
   final List<double> bpmValues;
   final double animationValue;
 
+  final double _compressionThreshold = 0.8;
+  final double _compressionRatio = 0.5;
+
   WaveformPainter({
     required this.harmonics,
     required this.harmonicVolumes,
@@ -15,6 +18,19 @@ class WaveformPainter extends CustomPainter {
     required this.bpmValues,
     required this.animationValue,
   });
+
+  List<double> _applyDynamicVolumeCompression(List<double> volumes) {
+    double totalVolume = volumes.reduce((a, b) => a + b);
+    
+    if (totalVolume <= _compressionThreshold) {
+      return List.from(volumes);
+    } else {
+      double excess = totalVolume - _compressionThreshold;
+      double compressionFactor = 1 - (excess * _compressionRatio / totalVolume);
+      
+      return volumes.map((v) => v * compressionFactor).toList();
+    }
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -28,9 +44,7 @@ class WaveformPainter extends CustomPainter {
     final height = size.height;
     final middleY = height / 2;
 
-    // Calculate the total volume to use for normalization
-    final totalVolume = harmonicVolumes.reduce((sum, volume) => sum + volume);
-    final normalizer = totalVolume > 0 ? 1 / totalVolume : 1;
+    List<double> compressedVolumes = _applyDynamicVolumeCompression(harmonicVolumes);
 
     for (int x = 0; x < width; x++) {
       double t = (x / width + animationValue) % 1.0;
@@ -38,7 +52,7 @@ class WaveformPainter extends CustomPainter {
 
       for (int i = 0; i < harmonics.length; i++) {
         double frequency = harmonics[i];
-        double volume = harmonicVolumes[i] * normalizer; // Normalize the volume
+        double volume = compressedVolumes[i];
         double dampingFactor = dampingFactors[i];
         double bpm = bpmValues[i];
 
@@ -51,7 +65,7 @@ class WaveformPainter extends CustomPainter {
         }
       }
 
-      double scaledY = y * height / 4;  // Scale the waveform to fit the height
+      double scaledY = y * height / 4;
       if (x == 0) {
         path.moveTo(x.toDouble(), middleY + scaledY);
       } else {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import 'waveform_painter.dart';
 import 'audio_js_interface.dart';
+import 'storage_service.dart';
 
 class SineWavePlayer extends StatefulWidget {
   @override
@@ -20,8 +21,10 @@ class _SineWavePlayerState extends State<SineWavePlayer> with SingleTickerProvid
   final double _compressionThreshold = 0.8;
   final double _compressionRatio = 0.5;
 
-  double _vibratoDepth = 0.03; // 默认值设置为 3%，最大值将是 6%
+  double _vibratoDepth = 0.03;
   double _vibratoSpeed = 5.0;
+
+  List<String> _presetNames = [];
 
   @override
   void initState() {
@@ -31,6 +34,7 @@ class _SineWavePlayerState extends State<SineWavePlayer> with SingleTickerProvid
       vsync: this,
       duration: Duration(seconds: 5),
     );
+    _loadPresetNames();
   }
 
   @override
@@ -110,11 +114,135 @@ class _SineWavePlayerState extends State<SineWavePlayer> with SingleTickerProvid
     }
   }
 
+  void _loadPresetNames() {
+    setState(() {
+      _presetNames = StorageService.getPresetNames();
+    });
+  }
+
+  void _savePreset(String name) {
+    final settings = {
+      'baseFrequency': _baseFrequencyController.text,
+      'harmonics': _harmonicControllers.map((c) => c.text).toList(),
+      'volumes': _harmonicVolumes,
+      'dampingFactors': _dampingFactorControllers.map((c) => c.text).toList(),
+      'bpmValues': _bpmControllers.map((c) => c.text).toList(),
+      'vibratoDepth': _vibratoDepth,
+      'vibratoSpeed': _vibratoSpeed,
+    };
+    StorageService.savePreset(name, settings);
+    _loadPresetNames();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Preset "$name" saved successfully')),
+    );
+  }
+
+  void _loadPreset(String name) {
+    final settings = StorageService.loadPreset(name);
+    if (settings != null) {
+      setState(() {
+        _baseFrequencyController.text = settings['baseFrequency'];
+        _harmonicControllers = List.generate(
+          9,
+          (index) => TextEditingController(text: settings['harmonics'][index]),
+        );
+        _harmonicVolumes = List<double>.from(settings['volumes']);
+        _dampingFactorControllers = List.generate(
+          9,
+          (index) => TextEditingController(text: settings['dampingFactors'][index]),
+        );
+        _bpmControllers = List.generate(
+          9,
+          (index) => TextEditingController(text: settings['bpmValues'][index]),
+        );
+        _vibratoDepth = settings['vibratoDepth'];
+        _vibratoSpeed = settings['vibratoSpeed'];
+      });
+      _updatePlayback();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Preset "$name" loaded successfully')),
+      );
+    }
+  }
+
+  void _deletePreset(String name) {
+    StorageService.deletePreset(name);
+    _loadPresetNames();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Preset "$name" deleted successfully')),
+    );
+  }
+
+  void _showSavePresetDialog() {
+    String newPresetName = '';
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Save Preset'),
+          content: TextField(
+            onChanged: (value) {
+              newPresetName = value;
+            },
+            decoration: InputDecoration(hintText: "Enter preset name"),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: Text('Cancel'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            TextButton(
+              child: Text('Save'),
+              onPressed: () {
+                if (newPresetName.isNotEmpty) {
+                  _savePreset(newPresetName);
+                  Navigator.of(context).pop();
+                }
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text('Harmonic Sine Wave Generator'),
+        actions: [
+          PopupMenuButton<String>(
+            onSelected: _loadPreset,
+            itemBuilder: (BuildContext context) {
+              return _presetNames.map((String name) {
+                return PopupMenuItem<String>(
+                  value: name,
+                  child: Row(
+                    children: [
+                      Text(name),
+                      Spacer(),
+                      IconButton(
+                        icon: Icon(Icons.delete),
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          _deletePreset(name);
+                        },
+                      ),
+                    ],
+                  ),
+                );
+              }).toList();
+            },
+          ),
+          IconButton(
+            icon: Icon(Icons.save),
+            onPressed: _showSavePresetDialog,
+            tooltip: 'Save Preset',
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: EdgeInsets.all(16.0),
@@ -263,7 +391,7 @@ class _SineWavePlayerState extends State<SineWavePlayer> with SingleTickerProvid
                       Slider(
                         value: _vibratoDepth,
                         min: 0.0,
-                        max: 0.06, // 最大值设置为 6%，相当于一个半音
+                        max: 0.06,
                         divisions: 120,
                         label: (_vibratoDepth * 200).toStringAsFixed(2),
                         onChanged: (value) {
